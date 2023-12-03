@@ -64,12 +64,12 @@ type APMData struct {
 	Load       string  `json:"load"`
 }
 
-var loadMap = map[string]float32{
+var loadMap = map[string]uint8{
 	// not sure if those two are the same, but they appear similar on the map
-	"":              0.3,
-	"normal loaded": 0.3,
-	"medium loaded": 0.7,
-	"overloaded":    1,
+	"":              10,
+	"normal loaded": 10,
+	"medium loaded": 70,
+	"overloaded":    100,
 }
 
 func loadConfig() *InstanceConfig {
