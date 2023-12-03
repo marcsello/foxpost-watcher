@@ -171,19 +171,34 @@ func run(ctx context.Context, ic *InstanceConfig) error {
 	return nil
 }
 
-func invoke(ic *InstanceConfig) {
+func invoke(ic *InstanceConfig) error {
+	ctx, cancel := context.WithTimeout(context.Background(), ic.timeout)
+	defer cancel()
+	return run(ctx, ic)
+}
+
+func safeInvoke(ic *InstanceConfig) {
+	// Used by the daemon, so if won't crash
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("PANIC! ", r, " (recovered)")
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), ic.timeout)
-	defer cancel()
-	err := run(ctx, ic)
+	err := invoke(ic)
 	if err != nil {
 		log.Println("Error while running collection: ", err)
 		return
+	}
+}
+
+func daemon(ic *InstanceConfig) {
+	log.Println("Starting ticker...")
+	ticker := time.NewTicker(env.Duration("POLL_INTERVAL", time.Hour))
+
+	for range ticker.C {
+		log.Println("Tick!")
+		safeInvoke(ic)
 	}
 }
 
@@ -191,12 +206,19 @@ func main() {
 	log.Println("Parsing config...")
 	ic := loadConfig()
 
-	log.Println("Starting ticker...")
-	ticker := time.NewTicker(env.Duration("POLL_INTERVAL", time.Hour))
-
-	invoke(ic)
-	for range ticker.C {
-		log.Println("Tick!")
-		invoke(ic)
+	oneShot := env.Bool("ONESHOT", false)
+	if oneShot {
+		// run once, crash on failure
+		log.Println("Running in one-shot mode...")
+		err := invoke(ic)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		// run as daemon, protected from crashing
+		log.Println("Running as daemon...")
+		safeInvoke(ic)
+		daemon(ic)
 	}
+
 }
