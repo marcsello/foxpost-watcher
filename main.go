@@ -28,11 +28,12 @@ type InstanceConfig struct {
 
 type APMData struct {
 	// we only interested in these fields
-	PlaceID uint64  `json:"place_id"`
-	Name    string  `json:"name"`
-	GeoLat  float64 `json:"geolat"`
-	GeoLng  float64 `json:"geolng"`
-	Load    string  `json:"load"`
+	PlaceID    uint64  `json:"place_id"`
+	OperatorID string  `json:"operator_id"`
+	Name       string  `json:"name"`
+	GeoLat     float64 `json:"geolat"`
+	GeoLng     float64 `json:"geolng"`
+	Load       string  `json:"load"`
 }
 
 var loadMap = map[string]float32{
@@ -144,8 +145,9 @@ func run(ctx context.Context, ic *InstanceConfig) error {
 			}
 
 			tags := map[string]string{
-				"place_id": strconv.FormatUint(apmData.PlaceID, 10),
-				"name":     apmData.Name,
+				"place_id":    strconv.FormatUint(apmData.PlaceID, 10),
+				"operator_id": apmData.OperatorID,
+				"name":        apmData.Name,
 			}
 
 			fields := map[string]interface{}{
