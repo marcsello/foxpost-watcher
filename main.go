@@ -72,7 +72,8 @@ func loadConfig() *InstanceConfig {
 
 		// set it in the client options
 		clientOpts = clientOpts.SetTLSConfig(&tls.Config{
-			RootCAs: rootCAs,
+			RootCAs:    rootCAs,
+			MinVersion: tls.VersionTLS12, // just to make gosec happy
 		})
 	}
 
