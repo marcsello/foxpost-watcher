@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/hashicorp/go-retryablehttp"
 	influxdb2 "github.com/influxdata/influxdb-client-go"
+	"github.com/influxdata/influxdb-client-go/api/write"
 	"gitlab.com/MikeTTh/env"
 	"log"
 	"net/http"
@@ -24,8 +25,35 @@ type InstanceConfig struct {
 	influxOrg         string
 	influxBucket      string
 	influxMeasurement string
+	dryRun            bool
 }
 
+func (ic *InstanceConfig) GetWriter() func(context.Context, *write.Point) error {
+
+	if ic.dryRun {
+		return func(_ context.Context, point *write.Point) error {
+			tagsStr := ""
+			fieldsStr := ""
+			for _, tag := range point.TagList() {
+				tagsStr += fmt.Sprintf("%s=%s ", tag.Key, tag.Value)
+			}
+			for _, field := range point.FieldList() {
+				fieldsStr += fmt.Sprintf("%s=%+v ", field.Key, field.Value)
+			}
+			log.Printf("[DRY RUN]: Would write datapoint: %s %s %+v", tagsStr, fieldsStr, point.Time())
+			return nil
+		}
+	} else {
+		// Prepare the write api, because we are going to write some serious stuff now.
+		writeAPI := ic.influxClient.WriteAPIBlocking(ic.influxOrg, ic.influxBucket)
+		return func(ctx context.Context, point *write.Point) error {
+			return writeAPI.WritePoint(ctx, point)
+		}
+	}
+
+}
+
+// https://foxpost.hu/uzleti-partnereknek/integracios-segedlet/webapi-integracio#api-4
 type APMData struct {
 	// we only interested in these fields
 	PlaceID    uint64  `json:"place_id"`
@@ -37,6 +65,8 @@ type APMData struct {
 }
 
 var loadMap = map[string]float32{
+	// not sure if those two are the same, but they appear similar on the map
+	"":              0.3,
 	"normal loaded": 0.3,
 	"medium loaded": 0.7,
 	"overloaded":    1,
@@ -59,45 +89,60 @@ func loadConfig() *InstanceConfig {
 		placeIDs[i] = placeID
 	}
 
-	const extraCAEnvvarName = "INFLUX_SERVER_EXTRA_CA"
-	clientOpts := influxdb2.DefaultOptions()
-	if env.Exists(extraCAEnvvarName) {
-		log.Println("Loading extra CA cert from envvar...")
-		// get the current cert pool, or a new one
-		rootCAs, _ := x509.SystemCertPool()
-		if rootCAs == nil {
-			rootCAs = x509.NewCertPool()
+	dryRun := env.Bool("DRY_RUN", false)
+
+	influxOrg := ""
+	influxBucket := ""
+	var influxClient influxdb2.Client
+
+	if !dryRun {
+		log.Println("Setting up influxdb client...")
+		influxOrg = env.StringOrPanic("INFLUX_SERVER_ORG")
+		influxBucket = env.StringOrPanic("INFLUX_SERVER_BUCKET")
+
+		const extraCAEnvvarName = "INFLUX_SERVER_EXTRA_CA"
+		clientOpts := influxdb2.DefaultOptions()
+		if env.Exists(extraCAEnvvarName) {
+			log.Println("Loading extra CA cert from envvar...")
+			// get the current cert pool, or a new one
+			rootCAs, _ := x509.SystemCertPool()
+			if rootCAs == nil {
+				rootCAs = x509.NewCertPool()
+			}
+
+			// append our cert
+			rootCAs.AppendCertsFromPEM([]byte(env.StringOrPanic(extraCAEnvvarName)))
+
+			// set it in the client options
+			clientOpts = clientOpts.SetTLSConfig(&tls.Config{
+				RootCAs:    rootCAs,
+				MinVersion: tls.VersionTLS12, // just to make gosec happy
+			})
 		}
 
-		// append our cert
-		rootCAs.AppendCertsFromPEM([]byte(env.StringOrPanic(extraCAEnvvarName)))
+		influxClient = influxdb2.NewClientWithOptions(
+			env.StringOrPanic("INFLUX_SERVER_URL"),
+			env.StringOrPanic("INFLUX_SERVER_TOKEN"),
+			clientOpts,
+		)
 
-		// set it in the client options
-		clientOpts = clientOpts.SetTLSConfig(&tls.Config{
-			RootCAs:    rootCAs,
-			MinVersion: tls.VersionTLS12, // just to make gosec happy
-		})
+		hc, err := influxClient.Health(context.Background())
+		if err != nil {
+			panic("influxdb health check failed")
+		}
+		log.Println("InfluxDB initial health check result: ", hc.Status)
+	} else {
+		log.Println("Dry run enabled! Not setting up Influx Client")
 	}
-
-	influxClient := influxdb2.NewClientWithOptions(
-		env.StringOrPanic("INFLUX_SERVER_URL"),
-		env.StringOrPanic("INFLUX_SERVER_TOKEN"),
-		clientOpts,
-	)
-
-	hc, err := influxClient.Health(context.Background())
-	if err != nil {
-		panic("influxdb health check failed")
-	}
-	log.Println("InfluxDB initial health check result: ", hc.Status)
 
 	return &InstanceConfig{
 		timeout:           env.Duration("INVOCATION_TIMEOUT", time.Minute),
 		placeIDs:          placeIDs,
 		influxClient:      influxClient,
-		influxOrg:         env.StringOrPanic("INFLUX_SERVER_ORG"),
-		influxBucket:      env.StringOrPanic("INFLUX_SERVER_BUCKET"),
+		influxOrg:         influxOrg,
+		influxBucket:      influxBucket,
 		influxMeasurement: env.String("INFLUX_MEASUREMENT", "foxpost"),
+		dryRun:            dryRun,
 	}
 }
 
@@ -133,12 +178,12 @@ func run(ctx context.Context, ic *InstanceConfig) error {
 		return err
 	}
 
-	// Prepare the write api, because we are going to write some serious stuff now.
-	writeAPI := ic.influxClient.WriteAPIBlocking(ic.influxOrg, ic.influxBucket)
+	writer := ic.GetWriter()
 
 	for _, apmData := range apmsData {
 		if slices.Contains(ic.placeIDs, apmData.PlaceID) {
 			// this is a place of interest. Record its status
+			log.Printf("Found place %d", apmData.PlaceID)
 
 			loadVal, ok := loadMap[apmData.Load]
 			if !ok {
@@ -159,7 +204,7 @@ func run(ctx context.Context, ic *InstanceConfig) error {
 
 			p := influxdb2.NewPoint(ic.influxMeasurement, tags, fields, ts)
 
-			err = writeAPI.WritePoint(ctx, p)
+			err = writer(ctx, p)
 			if err != nil {
 				return err
 			}

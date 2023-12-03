@@ -27,6 +27,7 @@ Configurable trough envvars:
 | `INFLUX_MEASUREMENT`     | `foxpost` | Name of the measurement to write the data in                                                                                                             |
 | `POLL_INTERVAL`          | `1h`      | Interval between invocations. Foxpost updates their data hourly, so there is no point setting shorter interval. Ignored when `ONESHOT` is set to `true`. |
 | `ONESHOT`                | `false`   | Run in one-shot mode: do one collection on startup and then exit. `POLL_INTERVAL` is ignored.                                                            |
+| `DRY_RUN`                | `false`   | Do not setup or write to InfluxDB only log the values that would be written. When set to `true` all `INFLUX_SERVER` vars are ignored.                    |
 
 When running as daemon (`ONESHOT` is `false`) then the daemon is protected from crashing during a collection. It only logs the error, and will retry the next time.
 When running as one-shot, then any error during collection will result in crash.
