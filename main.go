@@ -216,6 +216,7 @@ func run(ctx context.Context, ic *InstanceConfig) error {
 		}
 	}
 
+	log.Println("Success!")
 	return nil
 }
 
