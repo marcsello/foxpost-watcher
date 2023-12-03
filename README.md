@@ -23,7 +23,7 @@ Configurable trough envvars:
 | `INFLUX_SERVER_TOKEN`    |           | API token for your InfluxDB instance                                                                                                                     |
 | `INFLUX_SERVER_ORG`      |           | InfluxDB Organization                                                                                                                                    |
 | `INFLUX_SERVER_BUCKET`   |           | InfluxDB Bucket                                                                                                                                          |
-| `INFLUX_SERVER_EXTRA_CA` |           | Extra CA cert in PEM format (used only for influxdb communication)                                                                                       |
+| `INFLUX_SERVER_EXTRA_CA` |           | Extra CA cert in PEM format (used only for influxdb communication) (not a filename, the var should hold the CA cert itself)                              |
 | `INFLUX_MEASUREMENT`     | `foxpost` | Name of the measurement to write the data in                                                                                                             |
 | `POLL_INTERVAL`          | `1h`      | Interval between invocations. Foxpost updates their data hourly, so there is no point setting shorter interval. Ignored when `ONESHOT` is set to `true`. |
 | `ONESHOT`                | `false`   | Run in one-shot mode: do one collection on startup and then exit. `POLL_INTERVAL` is ignored.                                                            |

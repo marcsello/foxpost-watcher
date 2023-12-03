@@ -59,8 +59,9 @@ func loadConfig() *InstanceConfig {
 		placeIDs[i] = placeID
 	}
 
+	const extraCAEnvvarName = "INFLUX_SERVER_EXTRA_CA"
 	clientOpts := influxdb2.DefaultOptions()
-	if env.Exists("INFLUX_SERVER_EXTRA_CA") {
+	if env.Exists(extraCAEnvvarName) {
 		log.Println("Loading extra CA cert from envvar...")
 		// get the current cert pool, or a new one
 		rootCAs, _ := x509.SystemCertPool()
@@ -69,7 +70,7 @@ func loadConfig() *InstanceConfig {
 		}
 
 		// append our cert
-		rootCAs.AppendCertsFromPEM([]byte(env.StringOrPanic("INFLUX_SERVER_CA")))
+		rootCAs.AppendCertsFromPEM([]byte(env.StringOrPanic(extraCAEnvvarName)))
 
 		// set it in the client options
 		clientOpts = clientOpts.SetTLSConfig(&tls.Config{
